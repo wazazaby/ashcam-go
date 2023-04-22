@@ -9,6 +9,10 @@ import (
 
 type DateRFC1123Z time.Time
 
+func (d DateRFC1123Z) Time() time.Time {
+	return time.Time(d)
+}
+
 func (d *DateRFC1123Z) UnmarshalJSON(b []byte) error {
 	var date string
 	if err := json.Unmarshal(b, &date); err != nil {
