@@ -3,6 +3,7 @@ package ashcam
 import (
 	"io"
 	"net/http"
+	"time"
 )
 
 type HTTPClient interface {
@@ -33,4 +34,28 @@ func NewClient(options ...ClientOption) *Client {
 	}
 
 	return client
+}
+
+type ImageRequestTimeRange struct {
+	Start time.Time
+	End   time.Time
+}
+
+type ImageAPIRequestParameters struct {
+	WebcamCode string
+
+	DaysOld   int
+	TimeRange ImageRequestTimeRange
+
+	NewestFirst bool
+
+	Limit int
+}
+
+func (p *ImageAPIRequestParameters) buildEndpoint() string {
+	return ""
+}
+
+func (c *Client) GetImages(p *ImageAPIRequestParameters) (*ImageAPIResponse, error) {
+	return nil, nil
 }
