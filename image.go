@@ -1,5 +1,21 @@
 package ashcam
 
+type InterestingCode string
+
+const (
+	VolcanicActivity   InterestingCode = "V"
+	NoVolcanicActivity InterestingCode = "N"
+	Unknown            InterestingCode = "U"
+)
+
+func (c InterestingCode) IsInteresting() bool {
+	return c == VolcanicActivity
+}
+
+func (c InterestingCode) String() string {
+	return string(c)
+}
+
 type SunInformations struct {
 	Timezone string `json:"timezone"`
 
@@ -16,17 +32,16 @@ type SunInformations struct {
 //
 
 type Image struct {
-	ID                int          `json:"imageId"`
-	MD5               string       `json:"md5"`
-	WebcamCode        string       `json:"webcamCode"`
-	IsNewestForWebcam Bool         `json:"newestForWebcam"`
-	Timestamp         int          `json:"imageTimestamp"`
-	Date              DateRFC1123Z `json:"imageDate"`
-	// TODO(teddy): parse this with a custom type (right now, 3 values are possible -> V for volcanic activy, N for no volcanic activity and U for unknown)
-	IsInteresting   string          `json:"interestingCode"`
-	IsNightTime     Bool            `json:"isNighttimeInd"`
-	URL             string          `json:"imageUrl"`
-	SunInformations SunInformations `json:"suninfo"`
+	ID                int             `json:"imageId"`
+	MD5               string          `json:"md5"`
+	WebcamCode        string          `json:"webcamCode"`
+	IsNewestForWebcam Bool            `json:"newestForWebcam"`
+	Timestamp         int             `json:"imageTimestamp"`
+	Date              DateRFC1123Z    `json:"imageDate"`
+	InterestingCode   InterestingCode `json:"interestingCode"`
+	IsNightTime       Bool            `json:"isNighttimeInd"`
+	URL               string          `json:"imageUrl"`
+	SunInformations   SunInformations `json:"suninfo"`
 }
 
 type Meta struct {
