@@ -37,25 +37,17 @@ func NewClient(options ...ClientOption) *Client {
 }
 
 type ImageRequestTimeRange struct {
-	Start time.Time
-	End   time.Time
+	Start, End time.Time
 }
 
 type ImageAPIRequestParameters struct {
-	WebcamCode string
-
-	DaysOld   int
-	TimeRange ImageRequestTimeRange
-
+	TimeRange   ImageRequestTimeRange
+	WebcamCode  string
+	DaysOld     int
+	Limit       int
 	NewestFirst bool
-
-	Limit int
 }
 
-func (p *ImageAPIRequestParameters) buildEndpoint() string {
-	return ""
-}
-
-func (c *Client) GetImages(p *ImageAPIRequestParameters) (*ImageAPIResponse, error) {
-	return nil, nil
+func (c Client) GetImages(p ImageAPIRequestParameters) (ImageAPIResponse, error) {
+	return ImageAPIResponse{}, nil
 }

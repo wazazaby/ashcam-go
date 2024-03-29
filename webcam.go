@@ -2,33 +2,26 @@ package ashcam
 
 // TODO(teddy): add json struct tags
 type Webcam struct {
-	Code           string
-	Name           string
-	Latitude       float64
-	Longitude      float64
-	Elevation      float64
-	BearingDegrees int
-	ExternalURL    string
-
-	VNum  string // TODO(teddy): use numeric string type ?
-	VName string
-
-	HasImages  Bool
-	ImageTotal int
-
-	FirstImageDate     DateRFC1123Z
-	FistImageTimestamp int
-	LastImageDate      DateRFC1123Z
-	LastImageTimestamp int
-
+	FirstImageDate        DateRFC1123Z
+	LastImageDate         DateRFC1123Z
+	ExternalURL           string
+	Timezone              string // useful when sun informations are not set
+	Code                  string
 	ClearImageURL         string
-	CurrentImageURL       string
-	CurrentMediumImageURL string
+	VNum                  string // TODO(teddy): use numeric string type ?
+	VName                 string
 	CurrentThumbImageURL  string
-
-	NewestImage Image
-
-	Timezone string // useful when sun informations are not set
-
-	SunInformations SunInformations
+	CurrentMediumImageURL string
+	CurrentImageURL       string
+	Name                  string
+	SunInformations       SunInformations
+	NewestImage           Image
+	BearingDegrees        int
+	LastImageTimestamp    int
+	FistImageTimestamp    int
+	ImageTotal            int
+	Elevation             float64
+	Longitude             float64
+	Latitude              float64
+	HasImages             Bool
 }

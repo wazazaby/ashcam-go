@@ -1,11 +1,16 @@
 package ashcam
 
-type InterestingCode string
+import (
+	"encoding/json"
+	"fmt"
+)
+
+type InterestingCode uint8
 
 const (
-	VolcanicActivity   InterestingCode = "V"
-	NoVolcanicActivity InterestingCode = "N"
-	Unknown            InterestingCode = "U"
+	UnknownVolcanicActivity InterestingCode = iota
+	VolcanicActivity
+	NoVolcanicActivity
 )
 
 func (c InterestingCode) IsInteresting() bool {
@@ -13,47 +18,68 @@ func (c InterestingCode) IsInteresting() bool {
 }
 
 func (c InterestingCode) String() string {
-	return string(c)
+	switch c {
+	case VolcanicActivity:
+		return "V"
+	case NoVolcanicActivity:
+		return "N"
+	default:
+		return "U"
+	}
+}
+
+func (c *InterestingCode) UnmarshalJSON(b []byte) error {
+	switch string(b) {
+	case `"V"`:
+		*c = VolcanicActivity
+	case `"N"`:
+		*c = NoVolcanicActivity
+	default:
+		*c = UnknownVolcanicActivity
+	}
+	return nil
 }
 
 type SunInformations struct {
-	Timezone string `json:"timezone"`
-
-	CurrentTime          DateRFC1123Z `json:"time_in"`
-	CurrentTimeTimestamp int          `json:"time_in_unixtime"`
-
-	CivilTwilightSunrise DateRFC1123Z `json:"civil_twilight_sunrise"`
-	CivilTwilightSunset  DateRFC1123Z `json:"civil_twilight_sunset"`
-
-	CivilTwilightSunriseTimestamp int `json:"civil_twilight_sunrise_unixtime"`
-	CivilTwilightSunsetTimestamp  int `json:"civil_twilight_sunset_unixtime"`
+	CurrentTime                   DateRFC1123Z `json:"time_in"`
+	CivilTwilightSunrise          DateRFC1123Z `json:"civil_twilight_sunrise"`
+	CivilTwilightSunset           DateRFC1123Z `json:"civil_twilight_sunset"`
+	Timezone                      string       `json:"timezone"`
+	CurrentTimeTimestamp          int          `json:"time_in_unixtime"`
+	CivilTwilightSunriseTimestamp int          `json:"civil_twilight_sunrise_unixtime"`
+	CivilTwilightSunsetTimestamp  int          `json:"civil_twilight_sunset_unixtime"`
 }
 
 //
 
 type Image struct {
-	ID                int             `json:"imageId"`
+	Date              DateRFC1123Z    `json:"imageDate"`
 	MD5               string          `json:"md5"`
 	WebcamCode        string          `json:"webcamCode"`
-	IsNewestForWebcam Bool            `json:"newestForWebcam"`
-	Timestamp         int             `json:"imageTimestamp"`
-	Date              DateRFC1123Z    `json:"imageDate"`
-	InterestingCode   InterestingCode `json:"interestingCode"`
-	IsNightTime       Bool            `json:"isNighttimeInd"`
 	URL               string          `json:"imageUrl"`
 	SunInformations   SunInformations `json:"suninfo"`
+	ID                int             `json:"imageId"`
+	Timestamp         int             `json:"imageTimestamp"`
+	IsNewestForWebcam Bool            `json:"newestForWebcam"`
+	InterestingCode   InterestingCode `json:"interestingCode"`
+	IsNightTime       Bool            `json:"isNighttimeInd"`
 }
 
 type Meta struct {
+	APIURL              string `json:"apiUrl"`
 	ImageTotal          int    `json:"imageTotal"`
 	FirstImageTimestamp int    `json:"firstImageTimestamp"`
 	LastImageTimestamp  int    `json:"lastImageTimestamp"`
-	APIURL              string `json:"apiUrl"`
 	QuerySec            int    `json:"querySec"`
 }
 
 type ImageAPIResponse struct {
 	Images []Image `json:"images"`
-	Webcam Webcam  `json:"webcam"`
 	Meta   Meta    `json:"meta"`
+	Webcam Webcam  `json:"webcam"`
 }
+
+var (
+	_ fmt.Stringer     = (*InterestingCode)(nil)
+	_ json.Unmarshaler = (*InterestingCode)(nil)
+)
