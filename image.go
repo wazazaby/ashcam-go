@@ -65,6 +65,21 @@ type Image struct {
 	IsNightTime       Bool            `json:"isNighttimeInd"`
 }
 
+func (i *Image) UnmarshalJSON(b []byte) error {
+	if string(b) == `"[]"` {
+		*i = Image{}
+		return nil
+	}
+
+	var img Image
+	if err := json.Unmarshal(b, &img); err != nil {
+		return err
+	}
+
+	*i = img
+	return nil
+}
+
 type Meta struct {
 	APIURL              string `json:"apiUrl"`
 	ImageTotal          int    `json:"imageTotal"`

@@ -35,13 +35,13 @@ func (i Bool) Bool() bool {
 }
 
 func (i *Bool) UnmarshalJSON(b []byte) error {
-	switch string(b) {
+	switch s := string(b); s {
 	case `"Y"`:
 		*i = Bool(true)
 	case `"N"`:
 		*i = Bool(false)
 	default:
-		return fmt.Errorf("unsupported value %s for boolean indicator", string(b))
+		return fmt.Errorf("unsupported value %s for boolean indicator", s)
 	}
 	return nil
 }

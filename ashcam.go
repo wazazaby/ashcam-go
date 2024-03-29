@@ -1,6 +1,9 @@
 package ashcam
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -50,4 +53,65 @@ type ImageAPIRequestParameters struct {
 
 func (c Client) GetImages(p ImageAPIRequestParameters) (ImageAPIResponse, error) {
 	return ImageAPIResponse{}, nil
+}
+
+func (c Client) GetWebcam(ctx context.Context, code string) (WebcamResponse, error) {
+	var r WebcamResponse
+
+	url := concat(webcamEndpoint, code)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return r, fmt.Errorf("unable to get webcam, err: %w", err)
+	}
+
+	res, err := c.httpClient.Do(req)
+	if res != nil {
+		defer res.Body.Close()
+	}
+	if err != nil {
+		return r, fmt.Errorf("unable to get webcam, err: %w", err)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return r, fmt.Errorf("unable to get webcam, err: %w", ErrWebcamResourceNotFound)
+	}
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		return r, fmt.Errorf("unable to get webcam, err: %w", err)
+	}
+
+	if err := json.Unmarshal(data, &r); err != nil {
+		return r, fmt.Errorf("unable to get webcam, err: %w", err)
+	}
+
+	return r, nil
+}
+
+func (c Client) GetWebcams(ctx context.Context) (WebcamsResponse, error) {
+	var r WebcamsResponse
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, webcamsEndpoint, http.NoBody)
+	if err != nil {
+		return r, fmt.Errorf("unable to get all webcams, err: %w", err)
+	}
+
+	res, err := c.httpClient.Do(req)
+	if res != nil {
+		defer res.Body.Close()
+	}
+	if err != nil {
+		return r, fmt.Errorf("unable to get all webcams, err: %w", err)
+	}
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		return r, fmt.Errorf("unable to get all webcams, err: %w", err)
+	}
+
+	if err := json.Unmarshal(data, &r); err != nil {
+		return r, fmt.Errorf("unable to get all webcams, err: %w", err)
+	}
+
+	return r, nil
 }
