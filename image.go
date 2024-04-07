@@ -53,30 +53,32 @@ type SunInformations struct {
 //
 
 type Image struct {
-	Date              DateRFC1123Z    `json:"imageDate"`
-	MD5               string          `json:"md5"`
-	WebcamCode        string          `json:"webcamCode"`
-	URL               string          `json:"imageUrl"`
-	SunInformations   SunInformations `json:"suninfo"`
-	ID                int             `json:"imageId"`
-	Timestamp         int             `json:"imageTimestamp"`
-	IsNewestForWebcam Bool            `json:"newestForWebcam"`
-	InterestingCode   InterestingCode `json:"interestingCode"`
-	IsNightTime       Bool            `json:"isNighttimeInd"`
+	Date              DateRFC1123Z      `json:"imageDate"`
+	MD5               string            `json:"md5"`
+	WebcamCode        string            `json:"webcamCode"`
+	URL               string            `json:"imageUrl"`
+	SunInformations   SunInformations   `json:"suninfo"`
+	ID                int               `json:"imageId"`
+	Timestamp         int               `json:"imageTimestamp"`
+	IsNewestForWebcam YesNoUnknownState `json:"newestForWebcam"`
+	InterestingCode   InterestingCode   `json:"interestingCode"`
+	IsNightTime       YesNoUnknownState `json:"isNighttimeInd"`
 }
 
+type image Image
+
 func (i *Image) UnmarshalJSON(b []byte) error {
-	if string(b) == `"[]"` {
+	if string(b) == `[]` {
 		*i = Image{}
 		return nil
 	}
 
-	var img Image
+	var img image
 	if err := json.Unmarshal(b, &img); err != nil {
 		return err
 	}
 
-	*i = img
+	*i = Image(img)
 	return nil
 }
 

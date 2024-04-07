@@ -3,7 +3,7 @@ package ashcam
 
 import (
 	"encoding/json"
-	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -28,25 +28,53 @@ func (d *DateRFC1123Z) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-type Bool bool
+type YesNoUnknownState uint8
 
-func (i Bool) Bool() bool {
-	return bool(i)
-}
+const (
+	StateUnknown YesNoUnknownState = iota
+	StateYes
+	StateNo
+)
 
-func (i *Bool) UnmarshalJSON(b []byte) error {
-	switch s := string(b); s {
-	case `"Y"`:
-		*i = Bool(true)
-	case `"N"`:
-		*i = Bool(false)
+const (
+	stateUnknownLabel string = "?"
+	stateYesLabel     string = "Y"
+	stateNoLabel      string = "N"
+)
+
+func (i *YesNoUnknownState) UnmarshalJSON(b []byte) error {
+	s, _ := strconv.Unquote(string(b))
+	switch s {
+	case stateYesLabel:
+		*i = StateYes
+	case stateNoLabel:
+		*i = StateNo
 	default:
-		return fmt.Errorf("unsupported value %s for boolean indicator", s)
+		*i = StateUnknown
 	}
 	return nil
 }
 
+func (i YesNoUnknownState) MarshalJSON() ([]byte, error) {
+	buf := make([]byte, 0, 3)
+	buf = append(buf, '"')
+	buf = append(buf, i.String()...)
+	buf = append(buf, '"')
+	return buf, nil
+}
+
+func (i YesNoUnknownState) String() string {
+	switch i {
+	case StateYes:
+		return stateYesLabel
+	case StateNo:
+		return stateNoLabel
+	default:
+		return stateUnknownLabel
+	}
+}
+
 var (
-	_ json.Unmarshaler = (*Bool)(nil)
+	_ json.Unmarshaler = (*YesNoUnknownState)(nil)
 	_ json.Unmarshaler = (*DateRFC1123Z)(nil)
 )

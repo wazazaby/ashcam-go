@@ -12,28 +12,28 @@ var (
 )
 
 type Webcam struct {
-	FirstImageDate        DateRFC1123Z    `json:"firstImageDate"`
-	LastImageDate         DateRFC1123Z    `json:"lastImageDate"`
-	CurrentImageURL       string          `json:"currentImageUrl"`
-	Name                  string          `json:"webcamName"`
-	Code                  string          `json:"webcamCode"`
-	ClearImageURL         string          `json:"clearImageUrl"`
-	Timezone              string          `json:"timezone"` // Timezone can be useful when sun informations are not set.
-	VName                 string          `json:"vName"`
-	CurrentThumbImageURL  string          `json:"currentThumbImageUrl"`
-	CurrentMediumImageURL string          `json:"currentMediumImageUrl"`
-	ExternalURL           string          `json:"externalUrl"`
-	SunInformations       SunInformations `json:"suninfo"`
-	NewestImage           Image           `json:"newestImage"`
-	VNum                  int             `json:"vnum,string"`
-	BearingDegrees        int             `json:"bearingDeg"`
-	LastImageTimestamp    int             `json:"lastImageTimestamp"`
-	FistImageTimestamp    int             `json:"firstImageTimestamp"`
-	ImageTotal            int             `json:"imageTotal"`
-	Elevation             float64         `json:"elevationM"`
-	Longitude             float64         `json:"longitude"`
-	Latitude              float64         `json:"latitude"`
-	HasImages             Bool            `json:"hasImages"`
+	FirstImageDate        DateRFC1123Z      `json:"firstImageDate"`
+	LastImageDate         DateRFC1123Z      `json:"lastImageDate"`
+	CurrentImageURL       string            `json:"currentImageUrl"`
+	Name                  string            `json:"webcamName"`
+	Code                  string            `json:"webcamCode"`
+	ClearImageURL         string            `json:"clearImageUrl"`
+	Timezone              string            `json:"timezone"` // Timezone can be useful when sun informations are not set.
+	VName                 string            `json:"vName"`
+	CurrentThumbImageURL  string            `json:"currentThumbImageUrl"`
+	CurrentMediumImageURL string            `json:"currentMediumImageUrl"`
+	ExternalURL           string            `json:"externalUrl"`
+	SunInformations       SunInformations   `json:"suninfo"`
+	NewestImage           Image             `json:"newestImage"`
+	VNum                  int               `json:"vnum,string"`
+	BearingDegrees        int               `json:"bearingDeg"`
+	LastImageTimestamp    int               `json:"lastImageTimestamp"`
+	FistImageTimestamp    int               `json:"firstImageTimestamp"`
+	ImageTotal            int               `json:"imageTotal"`
+	Elevation             float64           `json:"elevationM"`
+	Longitude             float64           `json:"longitude"`
+	Latitude              float64           `json:"latitude"`
+	HasImages             YesNoUnknownState `json:"hasImages"`
 }
 
 type WebcamMeta struct {
