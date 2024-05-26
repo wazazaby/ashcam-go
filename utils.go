@@ -1,6 +1,8 @@
 package ashcam
 
-import "unsafe"
+import (
+	"unsafe"
+)
 
 func concat(parts ...string) string {
 	if parts == nil {

@@ -5,6 +5,10 @@ import (
 	"fmt"
 )
 
+const (
+	imagesEndpoint string = "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam"
+)
+
 type InterestingCode uint8
 
 const (

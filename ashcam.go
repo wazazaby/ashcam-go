@@ -39,20 +39,97 @@ func NewClient(options ...ClientOption) *Client {
 	return client
 }
 
-type ImageRequestTimeRange struct {
-	Start, End time.Time
+type imageAPIRequestParameters struct {
+	start, end  time.Time
+	daysOld     int
+	limit       int
+	newestFirst bool
 }
 
-type ImageAPIRequestParameters struct {
-	TimeRange   ImageRequestTimeRange
-	WebcamCode  string
-	DaysOld     int
-	Limit       int
-	NewestFirst bool
+type ImageRequestParameter func(*imageAPIRequestParameters)
+
+func OldestImageFirst() ImageRequestParameter {
+	return func(p *imageAPIRequestParameters) {
+		p.newestFirst = false
+	}
 }
 
-func (c Client) GetImages(p ImageAPIRequestParameters) (ImageAPIResponse, error) {
-	return ImageAPIResponse{}, nil
+func Limit(n int) ImageRequestParameter {
+	return func(p *imageAPIRequestParameters) {
+		p.limit = n
+	}
+}
+
+func DaysOld(n int) ImageRequestParameter {
+	return func(p *imageAPIRequestParameters) {
+		p.daysOld = n
+	}
+}
+
+func TimeRange(start, end time.Time) ImageRequestParameter {
+	return func(p *imageAPIRequestParameters) {
+		p.start, p.end = start, end
+	}
+}
+
+func (c Client) GetImages(ctx context.Context, webcamCode string, parameters ...ImageRequestParameter) (ImageAPIResponse, error) {
+	var r ImageAPIResponse
+
+	p := imageAPIRequestParameters{
+		newestFirst: true,
+	}
+
+	for _, apply := range parameters {
+		apply(&p)
+	}
+
+	byDaysOld := p.daysOld > 0
+	byTimeRange := !p.start.IsZero() && !p.end.IsZero()
+
+	order := "newestFirst"
+	if !p.newestFirst {
+		order = "oldestFirst"
+	}
+
+	var url string
+	switch {
+	case byDaysOld && byTimeRange:
+		return r, fmt.Errorf("days old and time range parameters can't be used together")
+	case byDaysOld:
+		url = fmt.Sprintf("%s/%s/%d/%s/%d", imagesEndpoint, webcamCode, p.daysOld, order, p.limit)
+	case byTimeRange:
+		url = fmt.Sprintf("%s/%s/%d/%d/%s/%d", imagesEndpoint, webcamCode, p.start.Unix(), p.end.Unix(), order, p.limit)
+	default:
+		url = fmt.Sprintf("%s/%s", imagesEndpoint, webcamCode)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return r, fmt.Errorf("unable to get images for webcam %q, err: %w", webcamCode, err)
+	}
+
+	res, err := c.httpClient.Do(req)
+	if res != nil {
+		defer res.Body.Close()
+	}
+	if err != nil {
+		return r, fmt.Errorf("unable to get images for webcam %q, err: %w", webcamCode, err)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return r, fmt.Errorf("unable to get images for webcam %q, err: %w", webcamCode, ErrWebcamResourceNotFound)
+	}
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		return r, fmt.Errorf("unable to get images for webcam %q, err: %w", webcamCode, err)
+	}
+
+	if err := json.Unmarshal(data, &r); err != nil {
+		return r, fmt.Errorf("unable to get images for webcam %q, err: %w", webcamCode, err)
+	}
+
+	return r, nil
 }
 
 func (c Client) GetWebcam(ctx context.Context, code string) (WebcamResponse, error) {
