@@ -1,12 +1,17 @@
 package ashcam
 
 import (
+	"bytes"
+	"cmp"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-)
-
-const (
-	imagesEndpoint string = "https://volcview.wr.usgs.gov/ashcam-api/imageApi/webcam"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"strconv"
+	"time"
 )
 
 type InterestingCode uint8
@@ -44,6 +49,10 @@ func (c *InterestingCode) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+func (c InterestingCode) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + c.String() + `"`), nil
+}
+
 type SunInformations struct {
 	CurrentTime                   DateRFC1123Z `json:"time_in"`
 	CivilTwilightSunrise          DateRFC1123Z `json:"civil_twilight_sunrise"`
@@ -53,14 +62,6 @@ type SunInformations struct {
 	CivilTwilightSunriseTimestamp int          `json:"civil_twilight_sunrise_unixtime"`
 	CivilTwilightSunsetTimestamp  int          `json:"civil_twilight_sunset_unixtime"`
 }
-
-type SunInformations2 struct {
-	SunInformations
-	CivilTwilightSunriseTimestamp bool `json:"civil_twilight_sunrise_unixtime"`
-	CivilTwilightSunsetTimestamp  bool `json:"civil_twilight_sunset_unixtime"`
-}
-
-//
 
 type Image struct {
 	Date              DateRFC1123Z      `json:"imageDate"`
@@ -78,6 +79,7 @@ type Image struct {
 type image Image
 
 func (i *Image) UnmarshalJSON(b []byte) error {
+	// Webcams without images have their newest image serialized as an empty array.
 	if string(b) == `[]` {
 		*i = Image{}
 		return nil
@@ -106,7 +108,165 @@ type ImageAPIResponse struct {
 	Webcam Webcam  `json:"webcam"`
 }
 
+type imageAPIRequestParameters struct {
+	start, end  time.Time
+	daysOld     int
+	limit       int
+	oldestFirst bool
+}
+
+type ImageRequestParameter func(*imageAPIRequestParameters)
+
+func OldestImageFirst() ImageRequestParameter {
+	return func(p *imageAPIRequestParameters) {
+		p.oldestFirst = true
+	}
+}
+
+// Limit sets the number of images to return, 0 returns all of them within the
+// requested time range.
+func Limit(n int) ImageRequestParameter {
+	return func(p *imageAPIRequestParameters) {
+		p.limit = n
+	}
+}
+
+func DaysOld(n int) ImageRequestParameter {
+	return func(p *imageAPIRequestParameters) {
+		p.daysOld = n
+	}
+}
+
+func TimeRange(start, end time.Time) ImageRequestParameter {
+	return func(p *imageAPIRequestParameters) {
+		p.start, p.end = start, end
+	}
+}
+
 var (
-	_ fmt.Stringer     = (*InterestingCode)(nil)
+	ErrDaysOldAndTimeRangeCantBeUsedTogether = errors.New("days old and time range parameters can't be used together")
+	ErrDaysOldRequired                       = errors.New("days old parameter is required")
+)
+
+// GetImages returns the images of a webcam. Without DaysOld or TimeRange every
+// image is returned, and the Limit and OldestImageFirst parameters are ignored
+// by the API.
+func (c *Client) GetImages(ctx context.Context, webcamCode string, parameters ...ImageRequestParameter) (ImageAPIResponse, error) {
+	p := imageAPIRequestParameters{}
+	for _, applyParameter := range parameters {
+		applyParameter(&p)
+	}
+
+	byDaysOld := p.daysOld > 0
+	byTimeRange := !p.start.IsZero() && !p.end.IsZero()
+	if byDaysOld && byTimeRange {
+		return ImageAPIResponse{}, ErrDaysOldAndTimeRangeCantBeUsedTogether
+	}
+
+	order := "newestFirst"
+	if p.oldestFirst {
+		order = "oldestFirst"
+	}
+
+	var path string
+	switch {
+	case byDaysOld:
+		path = fmt.Sprintf("/imageApi/webcam/%s/%d/%s/%d", webcamCode, p.daysOld, order, p.limit)
+	case byTimeRange:
+		path = fmt.Sprintf("/imageApi/webcam/%s/%d/%d/%s/%d", webcamCode, p.start.Unix(), p.end.Unix(), order, p.limit)
+	default:
+		path = "/imageApi/webcam/" + webcamCode
+	}
+
+	return get[ImageAPIResponse](ctx, c, path)
+}
+
+// GetRecentImages returns the limit most recent images, regardless of webcam.
+func (c *Client) GetRecentImages(ctx context.Context, limit int) (ImageAPIResponse, error) {
+	return get[ImageAPIResponse](ctx, c, "/imageApi/recent/"+strconv.Itoa(limit))
+}
+
+// GetInterestingImages returns the images displaying volcanic activity. A
+// daysOld greater than 0 limits the results to the most recent images.
+func (c *Client) GetInterestingImages(ctx context.Context, daysOld int) (ImageAPIResponse, error) {
+	path := "/imageApi/interesting"
+	if daysOld > 0 {
+		path += "/" + strconv.Itoa(daysOld)
+	}
+	return get[ImageAPIResponse](ctx, c, path)
+}
+
+// GetUninterestingImages returns the images that don't display volcanic
+// activity. As they're expected to be far more numerous than the interesting
+// ones, daysOld is required.
+func (c *Client) GetUninterestingImages(ctx context.Context, daysOld int) (ImageAPIResponse, error) {
+	if daysOld <= 0 {
+		return ImageAPIResponse{}, ErrDaysOldRequired
+	}
+	return get[ImageAPIResponse](ctx, c, "/imageApi/uninteresting/"+strconv.Itoa(daysOld))
+}
+
+// SetInterestingCode flags whether an image displays volcanic activity.
+// Interesting images are never purged. The identifier is either the image ID or
+// its MD5 sum, useful when the image is already loaded but its ID is unknown.
+//
+// Requires credentials.
+func (c *Client) SetInterestingCode(ctx context.Context, imageIdentifier string, code InterestingCode) ([]byte, error) {
+	path := fmt.Sprintf("/imageApi/interestingCode/%s/%s", imageIdentifier, code)
+	return c.raw(ctx, http.MethodPut, path, nil)
+}
+
+type ImageUpload struct {
+	Image      io.Reader
+	WebcamCode string
+	// FileName is optional and defaults to image.jpg.
+	FileName        string
+	Timestamp       time.Time
+	InterestingCode InterestingCode
+	// NotNewest keeps the newest webcam image unchanged and defers the webcam
+	// statistics to the slower periodic process. Intended for backfilling old
+	// images - uploading them too quickly may deadlock the API database.
+	NotNewest YesNo
+}
+
+func (u ImageUpload) body() (*requestBody, error) {
+	var buf bytes.Buffer
+
+	w := multipart.NewWriter(&buf)
+	w.WriteField("webcamCode", u.WebcamCode)
+	w.WriteField("imageTimestamp", strconv.FormatInt(u.Timestamp.Unix(), 10))
+	w.WriteField("interestingCode", u.InterestingCode.String())
+	w.WriteField("notNewest", u.NotNewest.String())
+
+	part, err := w.CreateFormFile("file", cmp.Or(u.FileName, "image.jpg"))
+	if err != nil {
+		return nil, fmt.Errorf("unable to create image upload part: %w", err)
+	}
+
+	if _, err := io.Copy(part, u.Image); err != nil {
+		return nil, fmt.Errorf("unable to write image upload part: %w", err)
+	}
+
+	if err := w.Close(); err != nil {
+		return nil, fmt.Errorf("unable to close image upload writer: %w", err)
+	}
+
+	return &requestBody{reader: &buf, contentType: w.FormDataContentType()}, nil
+}
+
+// UploadImage adds a new image to a webcam.
+//
+// Requires credentials.
+func (c *Client) UploadImage(ctx context.Context, upload ImageUpload) ([]byte, error) {
+	body, err := upload.body()
+	if err != nil {
+		return nil, err
+	}
+	return c.raw(ctx, http.MethodPost, "/imageApi/uploadImage", body)
+}
+
+var (
+	_ fmt.Stringer     = InterestingCode(0)
+	_ json.Marshaler   = InterestingCode(0)
 	_ json.Unmarshaler = (*InterestingCode)(nil)
 )

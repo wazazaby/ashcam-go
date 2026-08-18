@@ -1,6 +1,6 @@
 module github.com/wazazaby/ashcam-go
 
-go 1.22
+go 1.26
 
 require github.com/stretchr/testify v1.9.0
 

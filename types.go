@@ -1,9 +1,8 @@
-// This file contains type aliases
+// This file contains the types shared by the API payloads.
 package ashcam
 
 import (
 	"encoding/json"
-	"strconv"
 	"time"
 )
 
@@ -43,11 +42,10 @@ const (
 )
 
 func (i *YesNoUnknownState) UnmarshalJSON(b []byte) error {
-	s, _ := strconv.Unquote(string(b))
-	switch s {
-	case stateYesLabel:
+	switch string(b) {
+	case `"` + stateYesLabel + `"`:
 		*i = StateYes
-	case stateNoLabel:
+	case `"` + stateNoLabel + `"`:
 		*i = StateNo
 	default:
 		*i = StateUnknown
@@ -56,11 +54,7 @@ func (i *YesNoUnknownState) UnmarshalJSON(b []byte) error {
 }
 
 func (i YesNoUnknownState) MarshalJSON() ([]byte, error) {
-	buf := make([]byte, 0, 3)
-	buf = append(buf, '"')
-	buf = append(buf, i.String()...)
-	buf = append(buf, '"')
-	return buf, nil
+	return []byte(`"` + i.String() + `"`), nil
 }
 
 func (i YesNoUnknownState) String() string {
@@ -74,7 +68,23 @@ func (i YesNoUnknownState) String() string {
 	}
 }
 
+// YesNo is a boolean sent to the API as the "Y" or "N" indicator it expects.
+type YesNo bool
+
+func (y YesNo) String() string {
+	if y {
+		return stateYesLabel
+	}
+	return stateNoLabel
+}
+
+func (y YesNo) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + y.String() + `"`), nil
+}
+
 var (
 	_ json.Unmarshaler = (*YesNoUnknownState)(nil)
 	_ json.Unmarshaler = (*DateRFC1123Z)(nil)
+	_ json.Marshaler   = YesNoUnknownState(0)
+	_ json.Marshaler   = YesNo(false)
 )
