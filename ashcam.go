@@ -13,7 +13,7 @@ import (
 	"net/http"
 )
 
-const DefaultBaseURL string = "https://volcview.wr.usgs.gov/ashcam-api"
+const DefaultBaseURL = "https://volcview.wr.usgs.gov/ashcam-api"
 
 var (
 	ErrNotAuthorized = errors.New("not authorized, missing or invalid credentials")
@@ -152,6 +152,10 @@ func get[T any](ctx context.Context, c *Client, path string) (T, error) {
 	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
 		return v, fmt.Errorf("unable to decode %s response: %w", path, err)
 	}
+
+	// The decoder stops at the closing brace, so it never reaches EOF - the
+	// connection can only be reused once the rest of the body is drained.
+	io.Copy(io.Discard, res.Body)
 
 	return v, nil
 }

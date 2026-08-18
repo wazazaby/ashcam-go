@@ -1,30 +1,46 @@
-// This file contains the types shared by the API payloads.
 package ashcam
 
 import (
-	"encoding/json"
+	"fmt"
 	"time"
 )
 
-type DateRFC1123Z time.Time
+// Meta is the envelope every API response carries.
+type Meta struct {
+	APIURL   string `json:"apiUrl"`
+	QuerySec int    `json:"querySec"`
+}
 
-func (d DateRFC1123Z) Time() time.Time {
-	return time.Time(d)
+type DateRFC1123Z struct {
+	time.Time
 }
 
 func (d *DateRFC1123Z) UnmarshalJSON(b []byte) error {
-	var date string
-	if err := json.Unmarshal(b, &date); err != nil {
-		return err
+	if len(b) < 2 || b[0] != '"' {
+		return fmt.Errorf("unable to parse %s as an RFC1123Z date", b)
 	}
 
-	parsed, err := time.Parse(time.RFC1123Z, date)
+	parsed, err := time.Parse(time.RFC1123Z, string(b[1:len(b)-1]))
 	if err != nil {
 		return err
 	}
 
-	*d = DateRFC1123Z(parsed)
+	d.Time = parsed
 	return nil
+}
+
+func (d DateRFC1123Z) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + d.Format(time.RFC1123Z) + `"`), nil
+}
+
+type SunInformations struct {
+	CurrentTime                   DateRFC1123Z `json:"time_in"`
+	CivilTwilightSunrise          DateRFC1123Z `json:"civil_twilight_sunrise"`
+	CivilTwilightSunset           DateRFC1123Z `json:"civil_twilight_sunset"`
+	Timezone                      string       `json:"timezone"`
+	CurrentTimeTimestamp          int          `json:"time_in_unixtime"`
+	CivilTwilightSunriseTimestamp int          `json:"civil_twilight_sunrise_unixtime"`
+	CivilTwilightSunsetTimestamp  int          `json:"civil_twilight_sunset_unixtime"`
 }
 
 type YesNoUnknownState uint8
@@ -35,17 +51,11 @@ const (
 	StateNo
 )
 
-const (
-	stateUnknownLabel string = "?"
-	stateYesLabel     string = "Y"
-	stateNoLabel      string = "N"
-)
-
 func (i *YesNoUnknownState) UnmarshalJSON(b []byte) error {
 	switch string(b) {
-	case `"` + stateYesLabel + `"`:
+	case `"Y"`:
 		*i = StateYes
-	case `"` + stateNoLabel + `"`:
+	case `"N"`:
 		*i = StateNo
 	default:
 		*i = StateUnknown
@@ -60,11 +70,11 @@ func (i YesNoUnknownState) MarshalJSON() ([]byte, error) {
 func (i YesNoUnknownState) String() string {
 	switch i {
 	case StateYes:
-		return stateYesLabel
+		return "Y"
 	case StateNo:
-		return stateNoLabel
+		return "N"
 	default:
-		return stateUnknownLabel
+		return "?"
 	}
 }
 
@@ -73,18 +83,11 @@ type YesNo bool
 
 func (y YesNo) String() string {
 	if y {
-		return stateYesLabel
+		return "Y"
 	}
-	return stateNoLabel
+	return "N"
 }
 
 func (y YesNo) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + y.String() + `"`), nil
 }
-
-var (
-	_ json.Unmarshaler = (*YesNoUnknownState)(nil)
-	_ json.Unmarshaler = (*DateRFC1123Z)(nil)
-	_ json.Marshaler   = YesNoUnknownState(0)
-	_ json.Marshaler   = YesNo(false)
-)
