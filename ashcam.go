@@ -1,18 +1,48 @@
+// Package ashcam is a client for the USGS ASHCAM API.
+//
+// See https://avo-volcview.wr.usgs.gov/ashcam-api/ for the API documentation.
 package ashcam
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
+const DefaultBaseURL string = "https://volcview.wr.usgs.gov/ashcam-api"
+
 var (
-	ErrDaysOldAndTimeRangeCantBeUsedTogether = errors.New("days old and time range parameters can't be used together")
+	ErrNotAuthorized = errors.New("not authorized, missing or invalid credentials")
+	ErrNotFound      = errors.New("resource not found")
 )
+
+// APIError is returned when the API responds with a non 2xx status code.
+// Unknown webcam codes and image identifiers are reported as a 500 by the API,
+// not a 404.
+type APIError struct {
+	Method     string
+	URL        string
+	Body       string
+	StatusCode int
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("%s %s: request failed with status %d, body: %q", e.Method, e.URL, e.StatusCode, e.Body)
+}
+
+func (e *APIError) Unwrap() error {
+	switch e.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return ErrNotAuthorized
+	case http.StatusNotFound:
+		return ErrNotFound
+	}
+	return nil
+}
 
 type HTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
@@ -26,13 +56,31 @@ func WithHTTPClient(h HTTPClient) ClientOption {
 	}
 }
 
+func WithBaseURL(baseURL string) ClientOption {
+	return func(c *Client) {
+		c.baseURL = baseURL
+	}
+}
+
+// WithCredentials sets the credentials sent to the endpoints requiring
+// authentication - every write and admin endpoint.
+func WithCredentials(username, password string) ClientOption {
+	return func(c *Client) {
+		c.username, c.password = username, password
+	}
+}
+
 type Client struct {
 	httpClient HTTPClient
+	baseURL    string
+	username   string
+	password   string
 }
 
 func NewClient(options ...ClientOption) *Client {
 	client := &Client{
 		httpClient: http.DefaultClient,
+		baseURL:    DefaultBaseURL,
 	}
 
 	for _, applyOption := range options {
@@ -42,163 +90,96 @@ func NewClient(options ...ClientOption) *Client {
 	return client
 }
 
-type imageAPIRequestParameters struct {
-	start, end  time.Time
-	daysOld     int
-	limit       int
-	oldestFirst bool
+type requestBody struct {
+	reader      io.Reader
+	contentType string
 }
 
-type ImageRequestParameter func(*imageAPIRequestParameters)
+// do sends a request to path, relative to the client base URL, and returns the
+// response with its body still open unless an error is returned.
+func (c *Client) do(ctx context.Context, method, path string, body *requestBody) (*http.Response, error) {
+	url := c.baseURL + path
 
-func OldestImageFirst() ImageRequestParameter {
-	return func(p *imageAPIRequestParameters) {
-		p.oldestFirst = true
-	}
-}
-
-func Limit(n int) ImageRequestParameter {
-	return func(p *imageAPIRequestParameters) {
-		p.limit = n
-	}
-}
-
-func DaysOld(n int) ImageRequestParameter {
-	return func(p *imageAPIRequestParameters) {
-		p.daysOld = n
-	}
-}
-
-func TimeRange(start, end time.Time) ImageRequestParameter {
-	return func(p *imageAPIRequestParameters) {
-		p.start, p.end = start, end
-	}
-}
-
-func (c *Client) GetImages(ctx context.Context, webcamCode string, parameters ...ImageRequestParameter) (ImageAPIResponse, error) {
-	var r ImageAPIResponse
-
-	p := imageAPIRequestParameters{}
-	for _, applyParameter := range parameters {
-		applyParameter(&p)
+	var reader io.Reader
+	if body != nil {
+		reader = body.reader
 	}
 
-	byDaysOld := p.daysOld > 0
-	byTimeRange := !p.start.IsZero() && !p.end.IsZero()
-
-	order := "newestFirst"
-	if p.oldestFirst {
-		order = "oldestFirst"
-	}
-
-	var url string
-	switch {
-	case byDaysOld && byTimeRange:
-		return r, ErrDaysOldAndTimeRangeCantBeUsedTogether
-	case byDaysOld:
-		url = fmt.Sprintf("%s/%s/%d/%s/%d", imagesEndpoint, webcamCode, p.daysOld, order, p.limit)
-	case byTimeRange:
-		url = fmt.Sprintf("%s/%s/%d/%d/%s/%d", imagesEndpoint, webcamCode, p.start.Unix(), p.end.Unix(), order, p.limit)
-	default:
-		url = fmt.Sprintf("%s/%s", imagesEndpoint, webcamCode)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {
-		return r, fmt.Errorf("unable to create request for webcam %q, err: %w", webcamCode, err)
+		return nil, fmt.Errorf("unable to create %s %s request: %w", method, url, err)
+	}
+
+	if body != nil {
+		req.Header.Set("Content-Type", body.contentType)
+	}
+
+	if c.username != "" || c.password != "" {
+		req.Header.Set("username", c.username)
+		req.Header.Set("password", c.password)
 	}
 
 	res, err := c.httpClient.Do(req)
-	if res != nil {
+	if err != nil {
+		return nil, fmt.Errorf("unable to do %s %s request: %w", method, url, err)
+	}
+
+	if res.StatusCode < 200 || res.StatusCode > 299 {
 		defer res.Body.Close()
-	}
-	if err != nil {
-		return r, fmt.Errorf("unable to do request for webcam %q, err: %w", webcamCode, err)
-	}
-
-	if res.StatusCode != http.StatusOK {
-		return r, fmt.Errorf("request failed with status %d for webcam %q, err: %w", res.StatusCode, webcamCode, ErrWebcamResourceNotFound)
-	}
-
-	data, err := io.ReadAll(res.Body)
-	if err != nil {
-		return r, fmt.Errorf("unable to read response body for webcam %q, err: %w", webcamCode, err)
+		data, _ := io.ReadAll(io.LimitReader(res.Body, 1024))
+		// Drain the rest of the body, else the connection can't be reused.
+		io.Copy(io.Discard, res.Body)
+		return nil, &APIError{
+			Method:     method,
+			URL:        url,
+			Body:       string(bytes.TrimSpace(data)),
+			StatusCode: res.StatusCode,
+		}
 	}
 
-	if err := json.Unmarshal(data, &r); err != nil {
-		return r, fmt.Errorf("unable unmarshal response data for webcam %q, err: %w", webcamCode, err)
-	}
-
-	return r, nil
+	return res, nil
 }
 
-func (c *Client) GetWebcam(ctx context.Context, code string) (WebcamResponse, error) {
-	var r WebcamResponse
-	select {
-	case <-ctx.Done():
-		return r, fmt.Errorf("unable to get webcam %q, err: %w", code, ctx.Err())
-	default:
-	}
+func get[T any](ctx context.Context, c *Client, path string) (T, error) {
+	var v T
 
-	url := concat(webcamEndpoint, code)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	res, err := c.do(ctx, http.MethodGet, path, nil)
 	if err != nil {
-		return r, fmt.Errorf("unable to get webcam %q, err: %w", code, err)
+		return v, err
+	}
+	defer res.Body.Close()
+
+	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
+		return v, fmt.Errorf("unable to decode %s response: %w", path, err)
 	}
 
-	res, err := c.httpClient.Do(req)
-	if res != nil {
-		defer res.Body.Close()
-	}
-	if err != nil {
-		return r, fmt.Errorf("unable to get webcam %q, err: %w", code, err)
-	}
-
-	if res.StatusCode != http.StatusOK {
-		return r, fmt.Errorf("unable to get webcam %q, err: %w", code, ErrWebcamResourceNotFound)
-	}
-
-	data, err := io.ReadAll(res.Body)
-	if err != nil {
-		return r, fmt.Errorf("unable to get webcam %q, err: %w", code, err)
-	}
-
-	if err := json.Unmarshal(data, &r); err != nil {
-		return r, fmt.Errorf("unable to get webcam %q, err: %w", code, err)
-	}
-
-	return r, nil
+	return v, nil
 }
 
-func (c *Client) GetWebcams(ctx context.Context) (WebcamsResponse, error) {
-	var r WebcamsResponse
-	select {
-	case <-ctx.Done():
-		return r, fmt.Errorf("unable to get all webcams, err: %w", ctx.Err())
-	default:
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, webcamsEndpoint, http.NoBody)
+// raw returns the response body as-is. The API doesn't document the payload
+// returned by its write and admin endpoints, so it's left to the caller to
+// interpret.
+func (c *Client) raw(ctx context.Context, method, path string, body *requestBody) ([]byte, error) {
+	res, err := c.do(ctx, method, path, body)
 	if err != nil {
-		return r, fmt.Errorf("unable to get all webcams, err: %w", err)
+		return nil, err
 	}
-
-	res, err := c.httpClient.Do(req)
-	if res != nil {
-		defer res.Body.Close()
-	}
-	if err != nil {
-		return r, fmt.Errorf("unable to get all webcams, err: %w", err)
-	}
+	defer res.Body.Close()
 
 	data, err := io.ReadAll(res.Body)
 	if err != nil {
-		return r, fmt.Errorf("unable to get all webcams, err: %w", err)
+		return nil, fmt.Errorf("unable to read %s %s response: %w", method, path, err)
 	}
 
-	if err := json.Unmarshal(data, &r); err != nil {
-		return r, fmt.Errorf("unable to get all webcams, err: %w", err)
-	}
+	return data, nil
+}
 
-	return r, nil
+// rawJSON sends v as the JSON payload of a write endpoint.
+func (c *Client) rawJSON(ctx context.Context, method, path string, v any) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("unable to marshal %s request body: %w", path, err)
+	}
+	body := &requestBody{reader: bytes.NewReader(data), contentType: "application/json"}
+	return c.raw(ctx, method, path, body)
 }
