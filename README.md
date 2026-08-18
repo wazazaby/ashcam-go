@@ -24,6 +24,16 @@ _, err := client.UploadImage(ctx, ashcam.ImageUpload{
 Those endpoints have no documented response payload, so they return the raw body
 as `[]byte`.
 
+The API runs on two instances, and they are not interchangeable. Both serve the
+same webcam catalog, but each has its own database: `DefaultBaseURL` (the
+default) keeps the full image archive, while `AVOBaseURL` - the Alaska Volcano
+Observatory one - only keeps a deep archive for the Alaska and Yellowstone
+webcams, and its image IDs are unrelated to the other instance's.
+
+```go
+client := ashcam.NewClient(ashcam.WithBaseURL(ashcam.AVOBaseURL))
+```
+
 A non 2xx response gives an `*ashcam.APIError`, which matches
 `ashcam.ErrNotAuthorized` on 401/403 and `ashcam.ErrNotFound` on 404 - note the
 API answers 500, not 404, for an unknown webcam code or image identifier:

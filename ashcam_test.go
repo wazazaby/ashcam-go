@@ -412,4 +412,9 @@ func TestLive(t *testing.T) {
 
 	// Every write endpoint needs credentials we don't have here.
 	require.ErrorIs(t, client.AuthCheck(ctx), ErrNotAuthorized)
+
+	// The AVO instance serves the same catalog from its own database.
+	avo, err := NewClient(WithBaseURL(AVOBaseURL)).GetWebcams(ctx)
+	require.NoError(t, err)
+	require.Equal(t, webcams.Meta.Total, avo.Meta.Total)
 }

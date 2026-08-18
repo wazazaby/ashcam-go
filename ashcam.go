@@ -13,7 +13,17 @@ import (
 	"net/http"
 )
 
-const DefaultBaseURL = "https://volcview.wr.usgs.gov/ashcam-api"
+const (
+	// DefaultBaseURL keeps the full image archive for every webcam.
+	DefaultBaseURL = "https://volcview.wr.usgs.gov/ashcam-api"
+
+	// AVOBaseURL is the Alaska Volcano Observatory instance. It serves the same
+	// webcam catalog from its own database, but only keeps a deep image archive
+	// for the Alaska and Yellowstone webcams - as of August 2026 it holds 27
+	// Kilauea images against 21k on the default host. Image IDs are not
+	// comparable between the two instances, MD5 sums are.
+	AVOBaseURL = "https://avo-volcview.wr.usgs.gov/ashcam-api"
+)
 
 var (
 	ErrNotAuthorized = errors.New("not authorized, missing or invalid credentials")
@@ -56,6 +66,8 @@ func WithHTTPClient(h HTTPClient) ClientOption {
 	}
 }
 
+// WithBaseURL picks the API instance to talk to - DefaultBaseURL, AVOBaseURL or
+// a local mirror.
 func WithBaseURL(baseURL string) ClientOption {
 	return func(c *Client) {
 		c.baseURL = baseURL

@@ -190,7 +190,8 @@ func (c *Client) GetUninterestingImages(ctx context.Context, daysOld int) (Image
 
 // SetInterestingCode flags whether an image displays volcanic activity.
 // Interesting images are never purged. The identifier is either the image ID or
-// its MD5 sum, useful when the image is already loaded but its ID is unknown.
+// its MD5 sum - the MD5 is the one that identifies the same image across
+// instances, see AVOBaseURL.
 //
 // Requires credentials.
 func (c *Client) SetInterestingCode(ctx context.Context, imageIdentifier string, code InterestingCode) ([]byte, error) {
