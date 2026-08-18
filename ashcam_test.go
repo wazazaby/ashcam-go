@@ -1,9 +1,11 @@
 package ashcam
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -47,12 +49,12 @@ func TestRequestPaths(t *testing.T) {
 	tests := []struct {
 		name   string
 		call   func(*Client) error
-		method string
 		target string
+		// method defaults to GET when empty.
+		method string
 	}{{
 		name:   "images",
 		call:   func(c *Client) error { _, err := c.GetImages(t.Context(), "redoubt-2"); return err },
-		method: http.MethodGet,
 		target: "/imageApi/webcam/redoubt-2",
 	}, {
 		name: "images by days old",
@@ -60,7 +62,6 @@ func TestRequestPaths(t *testing.T) {
 			_, err := c.GetImages(t.Context(), "redoubt-2", DaysOld(7), Limit(10), OldestImageFirst())
 			return err
 		},
-		method: http.MethodGet,
 		target: "/imageApi/webcam/redoubt-2/7/oldestFirst/10",
 	}, {
 		name: "images by time range",
@@ -68,27 +69,22 @@ func TestRequestPaths(t *testing.T) {
 			_, err := c.GetImages(t.Context(), "redoubt-2", TimeRange(start, end))
 			return err
 		},
-		method: http.MethodGet,
 		target: "/imageApi/webcam/redoubt-2/1700000000/1750000000/newestFirst/0",
 	}, {
 		name:   "recent images",
 		call:   func(c *Client) error { _, err := c.GetRecentImages(t.Context(), 5); return err },
-		method: http.MethodGet,
 		target: "/imageApi/recent/5",
 	}, {
 		name:   "interesting images",
 		call:   func(c *Client) error { _, err := c.GetInterestingImages(t.Context(), 0); return err },
-		method: http.MethodGet,
 		target: "/imageApi/interesting",
 	}, {
 		name:   "interesting images by days old",
 		call:   func(c *Client) error { _, err := c.GetInterestingImages(t.Context(), 3); return err },
-		method: http.MethodGet,
 		target: "/imageApi/interesting/3",
 	}, {
 		name:   "uninteresting images",
 		call:   func(c *Client) error { _, err := c.GetUninterestingImages(t.Context(), 3); return err },
-		method: http.MethodGet,
 		target: "/imageApi/uninteresting/3",
 	}, {
 		name: "set interesting code",
@@ -101,12 +97,10 @@ func TestRequestPaths(t *testing.T) {
 	}, {
 		name:   "webcam",
 		call:   func(c *Client) error { _, err := c.GetWebcam(t.Context(), "akunIsland-N"); return err },
-		method: http.MethodGet,
 		target: "/webcamApi/webcam/akunIsland-N",
 	}, {
 		name:   "webcams",
 		call:   func(c *Client) error { _, err := c.GetWebcams(t.Context()); return err },
-		method: http.MethodGet,
 		target: "/webcamApi/webcams",
 	}, {
 		name: "webcams geojson",
@@ -114,7 +108,6 @@ func TestRequestPaths(t *testing.T) {
 			_, err := c.GetWebcamsGeoJSON(t.Context(), GeoArea{Lat1: 60, Lat2: 70, Long1: -150, Long2: -160})
 			return err
 		},
-		method: http.MethodGet,
 		target: "/webcamApi/geojson?lat1=60&lat2=70&long1=-150&long2=-160",
 	}, {
 		name:   "refresh all webcams",
@@ -127,27 +120,22 @@ func TestRequestPaths(t *testing.T) {
 			_, err := c.AssignClearImage(t.Context(), "redoubt-2", "42")
 			return err
 		},
-		method: http.MethodGet,
 		target: "/webcamApi/assignClearImage/redoubt-2/42",
 	}, {
 		name:   "housekeep",
 		call:   func(c *Client) error { _, err := c.Housekeep(t.Context()); return err },
-		method: http.MethodGet,
 		target: "/adminApi/housekeep",
 	}, {
 		name:   "purge images",
 		call:   func(c *Client) error { _, err := c.PurgeImages(t.Context(), 30); return err },
-		method: http.MethodGet,
 		target: "/adminApi/purgeImages/30",
 	}, {
 		name:   "mirrors",
 		call:   func(c *Client) error { _, err := c.GetMirrors(t.Context()); return err },
-		method: http.MethodGet,
 		target: "/adminApi/mirrors",
 	}, {
 		name:   "auth check",
 		call:   func(c *Client) error { return c.AuthCheck(t.Context()) },
-		method: http.MethodGet,
 		target: "/authcheck",
 	}}
 
@@ -156,7 +144,7 @@ func TestRequestPaths(t *testing.T) {
 			client, rec := newTestClient(t, "{}")
 			require.NoError(t, test.call(client))
 
-			require.Equal(t, test.method, rec.req.Method)
+			require.Equal(t, cmp.Or(test.method, http.MethodGet), rec.req.Method)
 			require.Equal(t, test.target, rec.req.URL.RequestURI())
 			require.Equal(t, "user", rec.req.Header.Get("username"))
 			require.Equal(t, "pass", rec.req.Header.Get("password"))
@@ -176,10 +164,9 @@ func TestRequestParameterErrors(t *testing.T) {
 
 func TestErrorStatuses(t *testing.T) {
 	for status, target := range map[int]error{
-		http.StatusForbidden:           ErrNotAuthorized,
-		http.StatusUnauthorized:        ErrNotAuthorized,
-		http.StatusNotFound:            ErrNotFound,
-		http.StatusInternalServerError: nil,
+		http.StatusForbidden:    ErrNotAuthorized,
+		http.StatusUnauthorized: ErrNotAuthorized,
+		http.StatusNotFound:     ErrNotFound,
 	} {
 		client, rec := newTestClient(t, "nope")
 		rec.status = status
@@ -190,39 +177,72 @@ func TestErrorStatuses(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, status, apiErr.StatusCode)
 		require.Equal(t, "nope", apiErr.Body)
-
-		if target != nil {
-			require.ErrorIs(t, err, target)
-		}
+		require.ErrorIs(t, err, target)
 	}
 }
 
-// The error path only keeps the first KB of the body, so it has to drain the
-// rest for the connection to be reused.
-func TestErrorPathReusesConnection(t *testing.T) {
-	var connections atomic.Int64
-
-	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, strings.Repeat("x", 5000), http.StatusInternalServerError)
-	}))
-	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
-		if state == http.StateNew {
-			connections.Add(1)
-		}
+// Neither the error path - it only keeps the first KB - nor the JSON decoder -
+// it stops at the closing brace - reads the body to EOF, so both have to drain
+// it for the connection to be reused.
+func TestResponsesReuseConnection(t *testing.T) {
+	tests := map[string]struct {
+		handler http.HandlerFunc
+		wantErr bool
+	}{
+		"truncated error body": {
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, strings.Repeat("x", 5000), http.StatusInternalServerError)
+			},
+			wantErr: true,
+		},
+		// Large enough that what the decoder leaves unread after the closing
+		// brace can't be drained by net/http itself. The real webcams payload
+		// is ~575 KB.
+		"large json body": {
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				var body strings.Builder
+				body.WriteString(`{"webcams":[`)
+				for i := 0; body.Len() < 600<<10; i++ {
+					if i > 0 {
+						body.WriteString(",")
+					}
+					fmt.Fprintf(&body, `{"webcamCode":"code-%d","webcamName":"webcam %d"}`, i, i)
+				}
+				body.WriteString(`],"meta":{"webcamTotal":1}}`)
+				w.Write([]byte(body.String()))
+			},
+		},
 	}
-	srv.Start()
-	defer srv.Close()
 
-	client := NewClient(WithBaseURL(srv.URL))
-	for range 5 {
-		_, err := client.GetWebcams(t.Context())
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			var connections atomic.Int64
 
-		apiErr, ok := errors.AsType[*APIError](err)
-		require.True(t, ok)
-		require.Len(t, apiErr.Body, 1024)
+			srv := httptest.NewUnstartedServer(test.handler)
+			srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+				if state == http.StateNew {
+					connections.Add(1)
+				}
+			}
+			srv.Start()
+			defer srv.Close()
+
+			client := NewClient(WithBaseURL(srv.URL))
+			for range 5 {
+				_, err := client.GetWebcams(t.Context())
+				if !test.wantErr {
+					require.NoError(t, err)
+					continue
+				}
+
+				apiErr, ok := errors.AsType[*APIError](err)
+				require.True(t, ok)
+				require.Len(t, apiErr.Body, 1024)
+			}
+
+			require.Equal(t, int64(1), connections.Load())
+		})
 	}
-
-	require.Equal(t, int64(1), connections.Load())
 }
 
 func TestUploadImage(t *testing.T) {
@@ -348,7 +368,7 @@ func TestDecodeImages(t *testing.T) {
 	require.Equal(t, VolcanicActivity, first.InterestingCode)
 	require.True(t, first.InterestingCode.IsInteresting())
 	require.Equal(t, StateYes, first.IsNightTime)
-	require.Equal(t, int64(1787055121), first.Date.Time().Unix())
+	require.Equal(t, int64(1787055121), first.Date.Unix())
 	require.Equal(t, "UTC", first.SunInformations.Timezone)
 
 	second := res.Images[1]
@@ -373,7 +393,7 @@ func TestLive(t *testing.T) {
 
 	webcams, err := client.GetWebcams(ctx)
 	require.NoError(t, err)
-	require.Len(t, webcams.Webcams, webcams.WebcamsMeta.Total)
+	require.Len(t, webcams.Webcams, webcams.Meta.Total)
 
 	images, err := client.GetImages(ctx, "akunIsland-N", DaysOld(7), Limit(2))
 	require.NoError(t, err)

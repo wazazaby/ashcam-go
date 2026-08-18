@@ -20,11 +20,11 @@ type Webcam struct {
 	CurrentMediumImageURL string            `json:"currentMediumImageUrl"`
 	ExternalURL           string            `json:"externalUrl"`
 	SunInformations       SunInformations   `json:"suninfo"`
-	NewestImage           Image             `json:"newestImage"`
+	NewestImage           NewestImage       `json:"newestImage"`
 	VNum                  int               `json:"vnum,string"`
 	BearingDegrees        int               `json:"bearingDeg"`
 	LastImageTimestamp    int               `json:"lastImageTimestamp"`
-	FistImageTimestamp    int               `json:"firstImageTimestamp"`
+	FirstImageTimestamp   int               `json:"firstImageTimestamp"`
 	ImageTotal            int               `json:"imageTotal"`
 	Elevation             float64           `json:"elevationM"`
 	Longitude             float64           `json:"longitude"`
@@ -33,24 +33,19 @@ type Webcam struct {
 	IsFAA                 YesNoUnknownState `json:"faaInd"`
 }
 
-type WebcamMeta struct {
-	APIURL   string `json:"apiUrl"`
-	QuerySec int    `json:"querySec"`
-}
-
 type WebcamsMeta struct {
-	WebcamMeta
+	Meta
 	Total int `json:"webcamTotal"`
 }
 
 type WebcamResponse struct {
-	WebcamMeta WebcamMeta `json:"meta"`
-	Webcam     Webcam     `json:"webcam"`
+	Meta   Meta   `json:"meta"`
+	Webcam Webcam `json:"webcam"`
 }
 
 type WebcamsResponse struct {
-	Webcams     []Webcam    `json:"webcams"`
-	WebcamsMeta WebcamsMeta `json:"meta"`
+	Webcams []Webcam    `json:"webcams"`
+	Meta    WebcamsMeta `json:"meta"`
 }
 
 func (c *Client) GetWebcam(ctx context.Context, code string) (WebcamResponse, error) {

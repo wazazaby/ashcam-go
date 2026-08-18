@@ -53,16 +53,6 @@ func (c InterestingCode) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + c.String() + `"`), nil
 }
 
-type SunInformations struct {
-	CurrentTime                   DateRFC1123Z `json:"time_in"`
-	CivilTwilightSunrise          DateRFC1123Z `json:"civil_twilight_sunrise"`
-	CivilTwilightSunset           DateRFC1123Z `json:"civil_twilight_sunset"`
-	Timezone                      string       `json:"timezone"`
-	CurrentTimeTimestamp          int          `json:"time_in_unixtime"`
-	CivilTwilightSunriseTimestamp int          `json:"civil_twilight_sunrise_unixtime"`
-	CivilTwilightSunsetTimestamp  int          `json:"civil_twilight_sunset_unixtime"`
-}
-
 type Image struct {
 	Date              DateRFC1123Z      `json:"imageDate"`
 	MD5               string            `json:"md5"`
@@ -76,36 +66,30 @@ type Image struct {
 	IsNightTime       YesNoUnknownState `json:"isNighttimeInd"`
 }
 
-type image Image
+// NewestImage is an Image tolerating the empty array the API serializes for a
+// webcam without images. Only Webcam needs it, so Image itself keeps the
+// default - and much faster - decoding.
+type NewestImage Image
 
-func (i *Image) UnmarshalJSON(b []byte) error {
-	// Webcams without images have their newest image serialized as an empty array.
+func (i *NewestImage) UnmarshalJSON(b []byte) error {
 	if string(b) == `[]` {
-		*i = Image{}
+		*i = NewestImage{}
 		return nil
 	}
-
-	var img image
-	if err := json.Unmarshal(b, &img); err != nil {
-		return err
-	}
-
-	*i = Image(img)
-	return nil
+	return json.Unmarshal(b, (*Image)(i))
 }
 
-type Meta struct {
-	APIURL              string `json:"apiUrl"`
-	ImageTotal          int    `json:"imageTotal"`
-	FirstImageTimestamp int    `json:"firstImageTimestamp"`
-	LastImageTimestamp  int    `json:"lastImageTimestamp"`
-	QuerySec            int    `json:"querySec"`
+type ImagesMeta struct {
+	Meta
+	ImageTotal          int `json:"imageTotal"`
+	FirstImageTimestamp int `json:"firstImageTimestamp"`
+	LastImageTimestamp  int `json:"lastImageTimestamp"`
 }
 
-type ImageAPIResponse struct {
-	Images []Image `json:"images"`
-	Meta   Meta    `json:"meta"`
-	Webcam Webcam  `json:"webcam"`
+type ImagesResponse struct {
+	Images []Image    `json:"images"`
+	Meta   ImagesMeta `json:"meta"`
+	Webcam Webcam     `json:"webcam"`
 }
 
 type imageAPIRequestParameters struct {
@@ -151,7 +135,7 @@ var (
 // GetImages returns the images of a webcam. Without DaysOld or TimeRange every
 // image is returned, and the Limit and OldestImageFirst parameters are ignored
 // by the API.
-func (c *Client) GetImages(ctx context.Context, webcamCode string, parameters ...ImageRequestParameter) (ImageAPIResponse, error) {
+func (c *Client) GetImages(ctx context.Context, webcamCode string, parameters ...ImageRequestParameter) (ImagesResponse, error) {
 	p := imageAPIRequestParameters{}
 	for _, applyParameter := range parameters {
 		applyParameter(&p)
@@ -160,7 +144,7 @@ func (c *Client) GetImages(ctx context.Context, webcamCode string, parameters ..
 	byDaysOld := p.daysOld > 0
 	byTimeRange := !p.start.IsZero() && !p.end.IsZero()
 	if byDaysOld && byTimeRange {
-		return ImageAPIResponse{}, ErrDaysOldAndTimeRangeCantBeUsedTogether
+		return ImagesResponse{}, ErrDaysOldAndTimeRangeCantBeUsedTogether
 	}
 
 	order := "newestFirst"
@@ -168,42 +152,40 @@ func (c *Client) GetImages(ctx context.Context, webcamCode string, parameters ..
 		order = "oldestFirst"
 	}
 
-	var path string
+	path := "/imageApi/webcam/" + webcamCode
 	switch {
 	case byDaysOld:
-		path = fmt.Sprintf("/imageApi/webcam/%s/%d/%s/%d", webcamCode, p.daysOld, order, p.limit)
+		path += fmt.Sprintf("/%d/%s/%d", p.daysOld, order, p.limit)
 	case byTimeRange:
-		path = fmt.Sprintf("/imageApi/webcam/%s/%d/%d/%s/%d", webcamCode, p.start.Unix(), p.end.Unix(), order, p.limit)
-	default:
-		path = "/imageApi/webcam/" + webcamCode
+		path += fmt.Sprintf("/%d/%d/%s/%d", p.start.Unix(), p.end.Unix(), order, p.limit)
 	}
 
-	return get[ImageAPIResponse](ctx, c, path)
+	return get[ImagesResponse](ctx, c, path)
 }
 
 // GetRecentImages returns the limit most recent images, regardless of webcam.
-func (c *Client) GetRecentImages(ctx context.Context, limit int) (ImageAPIResponse, error) {
-	return get[ImageAPIResponse](ctx, c, "/imageApi/recent/"+strconv.Itoa(limit))
+func (c *Client) GetRecentImages(ctx context.Context, limit int) (ImagesResponse, error) {
+	return get[ImagesResponse](ctx, c, "/imageApi/recent/"+strconv.Itoa(limit))
 }
 
 // GetInterestingImages returns the images displaying volcanic activity. A
 // daysOld greater than 0 limits the results to the most recent images.
-func (c *Client) GetInterestingImages(ctx context.Context, daysOld int) (ImageAPIResponse, error) {
+func (c *Client) GetInterestingImages(ctx context.Context, daysOld int) (ImagesResponse, error) {
 	path := "/imageApi/interesting"
 	if daysOld > 0 {
 		path += "/" + strconv.Itoa(daysOld)
 	}
-	return get[ImageAPIResponse](ctx, c, path)
+	return get[ImagesResponse](ctx, c, path)
 }
 
 // GetUninterestingImages returns the images that don't display volcanic
 // activity. As they're expected to be far more numerous than the interesting
 // ones, daysOld is required.
-func (c *Client) GetUninterestingImages(ctx context.Context, daysOld int) (ImageAPIResponse, error) {
+func (c *Client) GetUninterestingImages(ctx context.Context, daysOld int) (ImagesResponse, error) {
 	if daysOld <= 0 {
-		return ImageAPIResponse{}, ErrDaysOldRequired
+		return ImagesResponse{}, ErrDaysOldRequired
 	}
-	return get[ImageAPIResponse](ctx, c, "/imageApi/uninteresting/"+strconv.Itoa(daysOld))
+	return get[ImagesResponse](ctx, c, "/imageApi/uninteresting/"+strconv.Itoa(daysOld))
 }
 
 // SetInterestingCode flags whether an image displays volcanic activity.
@@ -264,9 +246,3 @@ func (c *Client) UploadImage(ctx context.Context, upload ImageUpload) ([]byte, e
 	}
 	return c.raw(ctx, http.MethodPost, "/imageApi/uploadImage", body)
 }
-
-var (
-	_ fmt.Stringer     = InterestingCode(0)
-	_ json.Marshaler   = InterestingCode(0)
-	_ json.Unmarshaler = (*InterestingCode)(nil)
-)
