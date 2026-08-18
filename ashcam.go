@@ -3,16 +3,19 @@ package ashcam
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 )
 
+var (
+	ErrDaysOldAndTimeRangeCantBeUsedTogether = errors.New("days old and time range parameters can't be used together")
+)
+
 type HTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
-	Get(url string) (*http.Response, error)
-	Post(url, contentType string, body io.Reader) (*http.Response, error)
 }
 
 type ClientOption func(*Client)
@@ -32,8 +35,8 @@ func NewClient(options ...ClientOption) *Client {
 		httpClient: http.DefaultClient,
 	}
 
-	for _, option := range options {
-		option(client)
+	for _, applyOption := range options {
+		applyOption(client)
 	}
 
 	return client
@@ -43,14 +46,14 @@ type imageAPIRequestParameters struct {
 	start, end  time.Time
 	daysOld     int
 	limit       int
-	newestFirst bool
+	oldestFirst bool
 }
 
 type ImageRequestParameter func(*imageAPIRequestParameters)
 
 func OldestImageFirst() ImageRequestParameter {
 	return func(p *imageAPIRequestParameters) {
-		p.newestFirst = false
+		p.oldestFirst = true
 	}
 }
 
@@ -72,29 +75,26 @@ func TimeRange(start, end time.Time) ImageRequestParameter {
 	}
 }
 
-func (c Client) GetImages(ctx context.Context, webcamCode string, parameters ...ImageRequestParameter) (ImageAPIResponse, error) {
+func (c *Client) GetImages(ctx context.Context, webcamCode string, parameters ...ImageRequestParameter) (ImageAPIResponse, error) {
 	var r ImageAPIResponse
 
-	p := imageAPIRequestParameters{
-		newestFirst: true,
-	}
-
-	for _, apply := range parameters {
-		apply(&p)
+	p := imageAPIRequestParameters{}
+	for _, applyParameter := range parameters {
+		applyParameter(&p)
 	}
 
 	byDaysOld := p.daysOld > 0
 	byTimeRange := !p.start.IsZero() && !p.end.IsZero()
 
 	order := "newestFirst"
-	if !p.newestFirst {
+	if p.oldestFirst {
 		order = "oldestFirst"
 	}
 
 	var url string
 	switch {
 	case byDaysOld && byTimeRange:
-		return r, fmt.Errorf("days old and time range parameters can't be used together")
+		return r, ErrDaysOldAndTimeRangeCantBeUsedTogether
 	case byDaysOld:
 		url = fmt.Sprintf("%s/%s/%d/%s/%d", imagesEndpoint, webcamCode, p.daysOld, order, p.limit)
 	case byTimeRange:
@@ -105,7 +105,7 @@ func (c Client) GetImages(ctx context.Context, webcamCode string, parameters ...
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
-		return r, fmt.Errorf("unable to get images for webcam %q, err: %w", webcamCode, err)
+		return r, fmt.Errorf("unable to create request for webcam %q, err: %w", webcamCode, err)
 	}
 
 	res, err := c.httpClient.Do(req)
@@ -113,26 +113,26 @@ func (c Client) GetImages(ctx context.Context, webcamCode string, parameters ...
 		defer res.Body.Close()
 	}
 	if err != nil {
-		return r, fmt.Errorf("unable to get images for webcam %q, err: %w", webcamCode, err)
+		return r, fmt.Errorf("unable to do request for webcam %q, err: %w", webcamCode, err)
 	}
 
 	if res.StatusCode != http.StatusOK {
-		return r, fmt.Errorf("unable to get images for webcam %q, err: %w", webcamCode, ErrWebcamResourceNotFound)
+		return r, fmt.Errorf("request failed with status %d for webcam %q, err: %w", res.StatusCode, webcamCode, ErrWebcamResourceNotFound)
 	}
 
 	data, err := io.ReadAll(res.Body)
 	if err != nil {
-		return r, fmt.Errorf("unable to get images for webcam %q, err: %w", webcamCode, err)
+		return r, fmt.Errorf("unable to read response body for webcam %q, err: %w", webcamCode, err)
 	}
 
 	if err := json.Unmarshal(data, &r); err != nil {
-		return r, fmt.Errorf("unable to get images for webcam %q, err: %w", webcamCode, err)
+		return r, fmt.Errorf("unable unmarshal response data for webcam %q, err: %w", webcamCode, err)
 	}
 
 	return r, nil
 }
 
-func (c Client) GetWebcam(ctx context.Context, code string) (WebcamResponse, error) {
+func (c *Client) GetWebcam(ctx context.Context, code string) (WebcamResponse, error) {
 	var r WebcamResponse
 	select {
 	case <-ctx.Done():
@@ -170,7 +170,7 @@ func (c Client) GetWebcam(ctx context.Context, code string) (WebcamResponse, err
 	return r, nil
 }
 
-func (c Client) GetWebcams(ctx context.Context) (WebcamsResponse, error) {
+func (c *Client) GetWebcams(ctx context.Context) (WebcamsResponse, error) {
 	var r WebcamsResponse
 	select {
 	case <-ctx.Done():

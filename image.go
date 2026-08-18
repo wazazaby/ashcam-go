@@ -54,6 +54,12 @@ type SunInformations struct {
 	CivilTwilightSunsetTimestamp  int          `json:"civil_twilight_sunset_unixtime"`
 }
 
+type SunInformations2 struct {
+	SunInformations
+	CivilTwilightSunriseTimestamp bool `json:"civil_twilight_sunrise_unixtime"`
+	CivilTwilightSunsetTimestamp  bool `json:"civil_twilight_sunset_unixtime"`
+}
+
 //
 
 type Image struct {
