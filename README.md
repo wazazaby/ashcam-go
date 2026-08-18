@@ -44,5 +44,9 @@ if apiErr, ok := errors.AsType[*ashcam.APIError](err); ok {
 }
 ```
 
-The `imageApi/webcam` query parameter variant is not implemented: the API
-returns a 500 for it.
+Two API quirks worth knowing, both verified against the live instances:
+
+- the `imageApi/webcam` query parameter variant is not implemented here, the API
+  returns a 500 for it
+- `OldestImageFirst` and a non-zero `Limit` can't be combined, the API returns a
+  500 for that pair

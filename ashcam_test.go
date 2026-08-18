@@ -59,10 +59,18 @@ func TestRequestPaths(t *testing.T) {
 	}, {
 		name: "images by days old",
 		call: func(c *Client) error {
-			_, err := c.GetImages(t.Context(), "redoubt-2", DaysOld(7), Limit(10), OldestImageFirst())
+			_, err := c.GetImages(t.Context(), "redoubt-2", DaysOld(7), Limit(10))
 			return err
 		},
-		target: "/imageApi/webcam/redoubt-2/7/oldestFirst/10",
+		target: "/imageApi/webcam/redoubt-2/7/newestFirst/10",
+	}, {
+		// A limit can't be combined with oldestFirst, see OldestImageFirst.
+		name: "images oldest first",
+		call: func(c *Client) error {
+			_, err := c.GetImages(t.Context(), "redoubt-2", DaysOld(7), OldestImageFirst())
+			return err
+		},
+		target: "/imageApi/webcam/redoubt-2/7/oldestFirst/0",
 	}, {
 		name: "images by time range",
 		call: func(c *Client) error {

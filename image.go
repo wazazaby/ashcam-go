@@ -101,6 +101,10 @@ type imageAPIRequestParameters struct {
 
 type ImageRequestParameter func(*imageAPIRequestParameters)
 
+// OldestImageFirst can't be combined with a non-zero Limit: the API answers 500
+// to that combination - on both instances, for every webcam and both request
+// forms, as of August 2026. Ask for the whole range and slice the result, or
+// take the newest images instead.
 func OldestImageFirst() ImageRequestParameter {
 	return func(p *imageAPIRequestParameters) {
 		p.oldestFirst = true
@@ -108,7 +112,7 @@ func OldestImageFirst() ImageRequestParameter {
 }
 
 // Limit sets the number of images to return, 0 returns all of them within the
-// requested time range.
+// requested time range. See OldestImageFirst for a combination the API rejects.
 func Limit(n int) ImageRequestParameter {
 	return func(p *imageAPIRequestParameters) {
 		p.limit = n
