@@ -5,12 +5,16 @@ import (
 	"time"
 )
 
-// Meta is the envelope every API response carries.
+// Meta is the envelope every API response carries. [ImagesMeta] and
+// [WebcamsMeta] extend it.
 type Meta struct {
 	APIURL   string `json:"apiUrl"`
 	QuerySec int    `json:"querySec"`
 }
 
+// DateRFC1123Z is a [time.Time] decoded from the RFC 1123Z layout the API
+// serializes its dates in. The embedded time is directly usable, so
+// image.Date.Unix() and image.Date.Before(t) both work.
 type DateRFC1123Z struct {
 	time.Time
 }
@@ -33,6 +37,9 @@ func (d DateRFC1123Z) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + d.Format(time.RFC1123Z) + `"`), nil
 }
 
+// SunInformations is the daylight state at a webcam's location, which the API
+// leaves unset when it doesn't know the coordinates - [Webcam.Timezone] is the
+// fallback. Each date is repeated as a Unix timestamp, matching the payload.
 type SunInformations struct {
 	CurrentTime                   DateRFC1123Z `json:"time_in"`
 	CivilTwilightSunrise          DateRFC1123Z `json:"civil_twilight_sunrise"`
@@ -43,6 +50,8 @@ type SunInformations struct {
 	CivilTwilightSunsetTimestamp  int          `json:"civil_twilight_sunset_unixtime"`
 }
 
+// YesNoUnknownState is a tri-state indicator the API returns as "Y", "N" or "?".
+// [YesNo] is its request-side counterpart.
 type YesNoUnknownState uint8
 
 const (
@@ -78,7 +87,9 @@ func (i YesNoUnknownState) String() string {
 	}
 }
 
-// YesNo is a boolean sent to the API as the "Y" or "N" indicator it expects.
+// YesNo is a boolean sent to the API as the "Y" or "N" indicator it expects. It
+// is the request-side counterpart of [YesNoUnknownState], which also carries the
+// unknown state the API can answer with.
 type YesNo bool
 
 func (y YesNo) String() string {

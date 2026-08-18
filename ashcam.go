@@ -1,4 +1,9 @@
-// Package ashcam is a client for the USGS ASHCAM API.
+// Package ashcam is a client for the USGS ASHCAM API, which serves the images
+// of the volcano webcams operated by the USGS volcano observatories.
+//
+// Start from [NewClient]. Read endpoints need nothing, every write and admin
+// endpoint needs [WithCredentials]. The API runs on two instances that don't
+// hold the same images, see [DefaultBaseURL] and [AVOBaseURL].
 //
 // See https://avo-volcview.wr.usgs.gov/ashcam-api/ for the API documentation.
 package ashcam
@@ -14,28 +19,32 @@ import (
 )
 
 const (
-	// DefaultBaseURL keeps the full image archive for every webcam.
+	// DefaultBaseURL is the instance keeping the full image archive for every
+	// webcam. It is the one [NewClient] uses.
 	DefaultBaseURL = "https://volcview.wr.usgs.gov/ashcam-api"
 
 	// AVOBaseURL is the Alaska Volcano Observatory instance. It serves the same
 	// webcam catalog from its own database, but only keeps a deep image archive
 	// for the Alaska and Yellowstone webcams - as of August 2026 it holds 27
-	// Kilauea images against 21k on the default host. Image IDs are not
-	// comparable between the two instances, MD5 sums are.
+	// Kilauea images against 21k on [DefaultBaseURL]. Image IDs are not
+	// comparable between the two instances, [Image.MD5] sums are.
 	AVOBaseURL = "https://avo-volcview.wr.usgs.gov/ashcam-api"
 )
 
+// The errors an [APIError] unwraps to, matched with [errors.Is].
 var (
 	ErrNotAuthorized = errors.New("not authorized, missing or invalid credentials")
 	ErrNotFound      = errors.New("resource not found")
 )
 
-// APIError is returned when the API responds with a non 2xx status code.
-// Unknown webcam codes and image identifiers are reported as a 500 by the API,
-// not a 404.
+// APIError is returned by every client method when the API responds with a non
+// 2xx status code. It unwraps to [ErrNotAuthorized] on 401 and 403, and to
+// [ErrNotFound] on 404 - note the API reports an unknown webcam code or image
+// identifier as a 500, not a 404.
 type APIError struct {
-	Method     string
-	URL        string
+	Method string
+	URL    string
+	// Body holds the first KB of the response body.
 	Body       string
 	StatusCode int
 }
@@ -54,20 +63,25 @@ func (e *APIError) Unwrap() error {
 	return nil
 }
 
+// HTTPClient is what a [Client] sends its requests with, satisfied by
+// [net/http.Client].
 type HTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
+// ClientOption configures a [Client], see [NewClient].
 type ClientOption func(*Client)
 
+// WithHTTPClient replaces [net/http.DefaultClient], which is what a [Client]
+// sends its requests with otherwise.
 func WithHTTPClient(h HTTPClient) ClientOption {
 	return func(c *Client) {
 		c.httpClient = h
 	}
 }
 
-// WithBaseURL picks the API instance to talk to - DefaultBaseURL, AVOBaseURL or
-// a local mirror.
+// WithBaseURL picks the API instance to talk to: [DefaultBaseURL],
+// [AVOBaseURL], or a local mirror - see [Client.GetMirrors].
 func WithBaseURL(baseURL string) ClientOption {
 	return func(c *Client) {
 		c.baseURL = baseURL
@@ -75,13 +89,15 @@ func WithBaseURL(baseURL string) ClientOption {
 }
 
 // WithCredentials sets the credentials sent to the endpoints requiring
-// authentication - every write and admin endpoint.
+// authentication - every write and admin endpoint. Use [Client.AuthCheck] to
+// find out whether the API accepts them.
 func WithCredentials(username, password string) ClientOption {
 	return func(c *Client) {
 		c.username, c.password = username, password
 	}
 }
 
+// Client is an ASHCAM API client. It is safe for concurrent use.
 type Client struct {
 	httpClient HTTPClient
 	baseURL    string
@@ -89,6 +105,8 @@ type Client struct {
 	password   string
 }
 
+// NewClient returns a [Client] talking to [DefaultBaseURL] over
+// [net/http.DefaultClient], with no credentials.
 func NewClient(options ...ClientOption) *Client {
 	client := &Client{
 		httpClient: http.DefaultClient,

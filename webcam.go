@@ -7,6 +7,8 @@ import (
 	"strconv"
 )
 
+// Webcam is one webcam and its current state. The catalog is the same on both
+// instances, the images it points at are not - see [AVOBaseURL].
 type Webcam struct {
 	FirstImageDate        DateRFC1123Z      `json:"firstImageDate"`
 	LastImageDate         DateRFC1123Z      `json:"lastImageDate"`
@@ -33,6 +35,7 @@ type Webcam struct {
 	IsFAA                 YesNoUnknownState `json:"faaInd"`
 }
 
+// WebcamsMeta is the [Meta] of a [WebcamsResponse].
 type WebcamsMeta struct {
 	Meta
 	Total int `json:"webcamTotal"`
@@ -48,15 +51,20 @@ type WebcamsResponse struct {
 	Meta    WebcamsMeta `json:"meta"`
 }
 
+// GetWebcam returns a single webcam. The API reports an unknown code as a 500,
+// see [APIError].
 func (c *Client) GetWebcam(ctx context.Context, code string) (WebcamResponse, error) {
 	return get[WebcamResponse](ctx, c, "/webcamApi/webcam/"+code)
 }
 
+// GetWebcams returns the whole webcam catalog.
 func (c *Client) GetWebcams(ctx context.Context) (WebcamsResponse, error) {
 	return get[WebcamsResponse](ctx, c, "/webcamApi/webcams")
 }
 
-// GeoArea is the latitude and longitude bounding box of a GeoJSON query.
+// GeoArea is the bounding box of a [Client.GetWebcamsGeoJSON] query. The API
+// treats an omitted bound as 0, so the zero GeoArea selects the handful of
+// webcams sitting at the origin rather than all of them.
 type GeoArea struct {
 	Lat1, Lat2   float64
 	Long1, Long2 float64
@@ -82,6 +90,9 @@ type GeoJSONGeometry struct {
 	Coordinates []float64 `json:"coordinates"`
 }
 
+// GeoJSONFeature is a webcam as a GeoJSON feature. Properties carries the same
+// fields [Client.GetWebcams] returns, minus the ones the API leaves out of
+// GeoJSON.
 type GeoJSONFeature struct {
 	Type       string          `json:"type"`
 	Properties Webcam          `json:"properties"`
@@ -95,14 +106,18 @@ type GeoJSONResponse struct {
 	Features []GeoJSONFeature `json:"features"`
 }
 
+// GetWebcamsGeoJSON returns the webcams within area as a GeoJSON feature
+// collection. It leaves out the webcams without coordinates, so it returns fewer
+// of them than [Client.GetWebcams].
 func (c *Client) GetWebcamsGeoJSON(ctx context.Context, area GeoArea) (GeoJSONResponse, error) {
 	return get[GeoJSONResponse](ctx, c, "/webcamApi/geojson?"+area.query())
 }
 
-// WebcamInput is the payload used to create or update a webcam. Only Code and
+// WebcamInput is the payload [Client.CreateOrUpdateWebcam] sends. Only Code and
 // Name are required, but Latitude and Longitude are needed for the API to tell
 // daytime images from nighttime ones. VNum and VName are the values assigned by
-// the Smithsonian Institution to the volcano the webcam looks at.
+// the Smithsonian Institution to the volcano the webcam looks at, and are also
+// what [Client.AssignVolcano] sets.
 type WebcamInput struct {
 	Code        string  `json:"webcamCode"`
 	Name        string  `json:"webcamName"`
@@ -120,31 +135,36 @@ type WebcamInput struct {
 // otherwise. The code is part of the image paths and can't be changed once the
 // webcam is created.
 //
-// Requires credentials.
+// Requires [WithCredentials]. The API doesn't document a response payload, so
+// the body is returned as is.
 func (c *Client) CreateOrUpdateWebcam(ctx context.Context, webcam WebcamInput) ([]byte, error) {
 	return c.rawJSON(ctx, http.MethodPost, "/webcamApi/webcam", webcam)
 }
 
-// RefreshAllWebcams refreshes the hasImages and newestImage values of every webcam.
+// RefreshAllWebcams refreshes the [Webcam.HasImages] and [Webcam.NewestImage]
+// values of every webcam.
 //
-// Requires credentials.
+// Requires [WithCredentials]. The API doesn't document a response payload, so
+// the body is returned as is.
 func (c *Client) RefreshAllWebcams(ctx context.Context) ([]byte, error) {
 	return c.raw(ctx, http.MethodPost, "/webcamApi/refreshAll", nil)
 }
 
-// AssignClearImage copies one of the webcam images to the clear image
-// directory, enabling the clear image slider in the webcam viewer. The
-// identifier is either the image ID or its MD5 sum.
+// AssignClearImage copies one of the webcam images to the clear image directory,
+// which fills [Webcam.ClearImageURL] and enables the clear image slider in the
+// webcam viewer. The identifier is either [Image.ID] or [Image.MD5].
 //
-// Requires credentials.
+// Requires [WithCredentials]. The API doesn't document a response payload, so
+// the body is returned as is.
 func (c *Client) AssignClearImage(ctx context.Context, webcamCode, imageIdentifier string) ([]byte, error) {
 	path := fmt.Sprintf("/webcamApi/assignClearImage/%s/%s", webcamCode, imageIdentifier)
 	return c.raw(ctx, http.MethodGet, path, nil)
 }
 
-// AssignVolcano sets the volcano number and name of a webcam.
+// AssignVolcano sets [Webcam.VNum] and [Webcam.VName].
 //
-// Requires credentials.
+// Requires [WithCredentials]. The API doesn't document a response payload, so
+// the body is returned as is.
 func (c *Client) AssignVolcano(ctx context.Context, webcamCode, vNum, vName string) ([]byte, error) {
 	return c.rawJSON(ctx, http.MethodPost, "/webcamApi/assignVolcano", struct {
 		Code  string `json:"webcamCode"`
